@@ -1,0 +1,81 @@
+---
+title: "Moscow metro"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r library, message=FALSE, warning=FALSE}
+
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ranger)
+```
+
+```{r read data, message=FALSE, warning=FALSE}
+setwd("C:/metro")
+train<-read_csv("train_dataset_train.csv")
+
+test<-read_csv("test_dataset_test.csv")
+answer<-read_csv("sample_solution.csv")
+
+united<-rbind(train[,1:10],test[,1:10])%>%select(ticket_type_nm,entrance_id, pass_dttm)
+
+united$ticket_type_nm<-as.numeric(as.factor(united$ticket_type_nm))
+```
+
+```{r prepare data for model1, message=FALSE, warning=FALSE}
+united$hour<-hour(united$pass_dttm)
+table(united$hour)
+tr<-united[1:nrow(train),-3]
+tst<-united[(nrow(train)+1):nrow(united),]
+tr$Y<-as.factor(train$label)
+weight<-train[,12]%>%left_join(train%>%group_by(label)%>%summarise(n=n()/nrow(train)))
+tr$w<-weight$n
+```
+
+```{r model1, message=FALSE, warning=FALSE}
+set.seed(1204)
+model1 <- ranger(Y~., data=tr[,-5], mtry=2, splitrule="extratrees", case.weights = 1/tr$w)
+```
+
+```{r predict model1}
+model1
+answer1<-predict(model1,tst)
+```
+
+```{r prepare data for model2, message=FALSE, warning=FALSE}
+united$wday<-wday(united$pass_dttm,week_start = 1)
+table(united$wday)
+united$hour<-hour(united$pass_dttm)+ (minute(united$pass_dttm)%/%20)/3
+
+tr<-united[1:nrow(train),-3]
+tst<-united[(nrow(train)+1):nrow(united),]
+
+tr$Y<-train$time_to_under
+tr2<-tr%>%group_by(ticket_type_nm, hour,wday, Y=round(Y))%>%summarise(n=n())
+```
+
+```{r model2}
+set.seed(1204)
+model2 <- ranger(Y~., data=tr2[,-5], mtry=2, splitrule="extratrees", case.weights = tr2$n)
+
+```
+
+```{r predict model2}
+model2
+answer2<-predict(model2,tst)
+```
+
+```{r answer}
+
+
+answer$label<-answer1$predictions
+answer$time_to_under<-answer2$predictions
+
+summary(answer)
+
+write_csv(answer, "metro_2211.csv")
+
+```
